@@ -1,0 +1,10 @@
+services:
+  astro-web:
+    build: .
+    container_name: astro-web
+    ports:
+      - "3004:3004"
+    environment:
+      - BACKEND_URL=http://127.0.0.1:8000
+      # - DEMO_MODE=1        # uncomment for synthetic demo (no FITS / no network)
+    restart: unless-stopped
