@@ -34,15 +34,24 @@ export default function InteractiveImage({ base64, width, height, objects, selec
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  const onDown = (e) => { dragging.current = { x: e.clientX, y: e.clientY, ...view }; };
+  const onDown = (e) => {
+    dragging.current = { x: e.clientX, y: e.clientY, moved: false, ...view };
+  };
   const onMove = (e) => {
     const d = dragging.current;
     if (!d) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;   // it's a pan
     setView((v) => ({ ...v, tx: d.tx + dx, ty: d.ty + dy }));
   };
   const onUp = () => { dragging.current = null; };
   const reset = () => setView({ scale: 1, tx: 0, ty: 0 });
+
+  // Only treat it as a marker click if the pointer didn't pan.
+  const clickMarker = (i, sel) => {
+    if (dragging.current?.moved) return;
+    onSelect?.(sel ? null : i);
+  };
 
   return (
     <div className="relative">
@@ -73,20 +82,31 @@ export default function InteractiveImage({ base64, width, height, objects, selec
               const isNew = o.status === "new";
               const r = isNew ? 7 : 5;
               const color = isNew ? "#FB7185" : "#34D399";
+              // Invisible hit target: at least ~10px in image space, and it
+              // shrinks as you zoom in so it never overlaps neighbouring stars.
+              const hitR = Math.max(r + 4, 10 / Math.max(view.scale, 1) + r);
               return (
                 <g key={i}>
+                  {/* clickable area: the whole disc, not just the stroke */}
+                  <circle
+                    cx={o.x} cy={o.y} r={hitR}
+                    fill="transparent"
+                    className="pointer-events-auto cursor-pointer"
+                    onMouseEnter={() => setHover({ i, o })}
+                    onMouseLeave={() => setHover(null)}
+                    onClick={() => clickMarker(i, sel)}
+                  />
+                  {/* the visible marker (not interactive — the hit disc handles it) */}
                   <circle
                     cx={o.x} cy={o.y} r={sel ? r + 4 : r}
                     fill="none" stroke={color}
                     strokeWidth={sel ? 2.5 : 1.5}
-                    className="pointer-events-auto cursor-pointer"
-                    onMouseEnter={() => setHover({ i, o })}
-                    onMouseLeave={() => setHover(null)}
-                    onClick={() => onSelect?.(sel ? null : i)}
+                    className="pointer-events-none"
                   />
                   {sel && (
                     <circle cx={o.x} cy={o.y} r={r + 9} fill="none"
-                            stroke={color} strokeWidth={1} opacity={0.5} />
+                            stroke={color} strokeWidth={1} opacity={0.5}
+                            className="pointer-events-none" />
                   )}
                 </g>
               );

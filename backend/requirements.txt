@@ -7,3 +7,6 @@ astropy>=6.0
 astroquery>=0.4.7
 photutils>=1.10
 scipy>=1.11
+
+# tetra3 detector (GitHub-only; needs git available at install time)
+tetra3 @ git+https://github.com/esa/tetra3.git

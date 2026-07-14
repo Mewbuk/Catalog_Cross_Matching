@@ -49,9 +49,14 @@ function download(filename, dataUrl) {
 export default function Home() {
   const [file, setFile] = useState(null);
   const [fwhm, setFwhm] = useState(3.0);
-  const [threshold, setThreshold] = useState(5.0);
+  const [threshold, setThreshold] = useState(8.0);
   const [radius, setRadius] = useState(30.0);
   const [autoFwhm, setAutoFwhm] = useState(true);
+
+  // detectors (merged into one source list)
+  const [useDao, setUseDao] = useState(true);
+  const [useTetra3, setUseTetra3] = useState(true);
+  const [tetraSigma, setTetraSigma] = useState(5.0);
 
   // plate solving
   const [solver, setSolver] = useState("gaia");   // gaia (M-solving) | astrometry
@@ -78,6 +83,9 @@ export default function Home() {
       fd.append("auto_fwhm", autoFwhm);
       fd.append("threshold_sigma", threshold);
       fd.append("search_radius", radius);
+      fd.append("use_dao", useDao);
+      fd.append("use_tetra3", useTetra3);
+      fd.append("tetra_sigma", tetraSigma);
       fd.append("solver", solver);
       if (apiKey) fd.append("api_key", apiKey);
       fd.append("use_gaia", cats.gaia);
@@ -101,10 +109,7 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <header className="starfield relative mb-10 overflow-hidden rounded-2xl border border-line bg-panel/40 px-8 py-10">
-        <p className="mb-2 font-mono text-xs uppercase tracking-[0.3em] text-cyan">
-          FITS &middot; source detection &middot; catalog cross-match
-        </p>
-        <h1 className="text-4xl font-semibold leading-tight text-ink md:text-5xl">Astrometry Console</h1>
+        <h1 className="text-4xl font-semibold leading-tight text-ink md:text-5xl">Catalogs Cross-Matching</h1>
         <p className="mt-3 max-w-xl text-muted">
           Upload a FITS frame, detect optical sources, resolve their sky
           coordinates, and flag the ones that aren&apos;t catalogued yet.
@@ -114,33 +119,52 @@ export default function Home() {
       <div className="grid gap-8 md:grid-cols-[340px_1fr]">
         {/* Controls */}
         <section className="space-y-5">
+
           <div className="rounded-2xl border border-line bg-panel p-5">
             <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-muted">Input</h2>
             <button onClick={() => inputRef.current?.click()}
                     className="w-full rounded-xl border border-dashed border-line bg-panel2/50 px-4 py-6 text-center transition hover:border-cyan/50">
-              <div className="text-sm text-ink">{file ? file.name : "Choose a FITS file"}</div>
+              <div className="text-sm text-ink">{file ? file.name : "Choose a file"}</div>
               <div className="mt-1 text-xs text-muted">
-                {file ? "Click to replace" : ".fits, .fit, .fts \u2014 or run the demo"}
+                {file ? "Click to replace" : ".fits, .fit, .fts"}
               </div>
             </button>
             <input ref={inputRef} type="file" accept=".fits,.fit,.fts,.fz" hidden
                    onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </div>
 
-          <div className="space-y-5 rounded-2xl border border-line bg-panel p-5">
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted">Detection</h2>
+          {/* Detectors — results are merged into one deduplicated list */}
+          <div className="space-y-3 rounded-2xl border border-line bg-panel p-5">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted">Detectors</h2>
+
             <label className="flex items-center justify-between">
-              <span className="text-sm text-ink">Auto-measure FWHM</span>
-              <input type="checkbox" checked={autoFwhm}
-                     onChange={(e) => setAutoFwhm(e.target.checked)}
+              <span className="text-sm text-ink">DAOStarFinder</span>
+              <input type="checkbox" checked={useDao} onChange={(e) => setUseDao(e.target.checked)}
                      className="h-4 w-4 accent-cyan" />
             </label>
-            <Slider label="FWHM (px)" value={fwhm} min={1} max={10} step={0.5} onChange={setFwhm}
-                    hint={autoFwhm ? "Starting guess; measured per image" : "Fixed value"} />
-            <Slider label="Threshold (σ)" value={threshold} min={1} max={15} step={0.5}
-                    onChange={setThreshold} hint="Higher = stricter, fewer noise dots" />
-            <Slider label="Match radius (arcsec)" value={radius} min={1} max={120} step={1}
-                    onChange={setRadius} hint="How close a catalog star must be" />
+            {useDao && (
+              <><label className="flex items-center justify-between">
+                <span className="text-sm text-ink">Auto-measure FWHM</span>
+                <input type="checkbox" checked={autoFwhm}
+                  onChange={(e) => setAutoFwhm(e.target.checked)}
+                  className="h-4 w-4 accent-cyan" />
+              </label>
+              {!autoFwhm && (
+                <Slider label="FWHM (px)" value={fwhm} min={1} max={10} step={0.5} onChange={setFwhm}/>
+                )}
+              <Slider label="Dao Threshold (σ)" value={threshold} min={1} max={15} step={0.5}
+                onChange={setThreshold}  /></>
+            )}
+
+            <label className="flex items-center justify-between">
+              <span className="text-sm text-ink">Tetra3</span>
+              <input type="checkbox" checked={useTetra3} onChange={(e) => setUseTetra3(e.target.checked)}
+                     className="h-4 w-4 accent-cyan" />
+            </label>
+            {useTetra3 && (
+              <Slider label="Tetra3 Threshold (σ)" value={tetraSigma} min={1} max={15} step={0.5}
+                      onChange={setTetraSigma} />
+            )}
           </div>
 
           {/* Plate solving — choose the solver */}
@@ -162,7 +186,7 @@ export default function Home() {
               ))}
             </div>
             <p className="text-xs text-muted">
-              {solver === "gaia" && "Offline M-solving using the header's center."}
+              {solver === "gaia" && "Using when the header's has center coordinate."}
               {solver === "astrometry" && "Blind astrometry.net solve (needs an API key)."}
             </p>
             {solver === "astrometry" && (
@@ -173,12 +197,13 @@ export default function Home() {
                        className="w-full rounded-lg border border-line bg-panel2 px-3 py-2 font-mono text-sm text-ink outline-none focus:border-cyan/50" />
               </div>
             )}
-            <p className="text-[11px] text-muted">Only runs when the file has no WCS of its own.</p>
           </div>
 
           {/* Catalogs to match against */}
           <div className="space-y-2 rounded-2xl border border-line bg-panel p-5">
             <h2 className="mb-1 text-sm font-medium uppercase tracking-wider text-muted">Catalogs</h2>
+            <Slider label="Match radius (arcsec)" value={radius} min={1} max={120} step={1}
+                    onChange={setRadius} hint="How close a catalog star must be" />
             {[
               ["gaia", "Gaia DR3", "stars"],
               ["panstarrs", "Pan-STARRS", "faint optical"],
@@ -239,7 +264,7 @@ export default function Home() {
                     FWHM {result.fwhm_used}px &middot; WCS {result.wcs_ok ? "solved" : "none"}
                     {result.solver_used && result.solver_used !== "file" && result.solver_used !== "demo" && (
                       <> &middot; {
-                        result.solver_used === "gaia_offline" ? "Gaia solve" :
+                        result.solver_used === "gaia_offline" ? "M-solve" :
                         result.solver_used === "astrometry_net" ? "astrometry.net solve" :
                         result.solver_used === "failed" ? "solve failed" : result.solver_used
                       }{result.center_source ? ` (center from ${result.center_source})` : ""}</>

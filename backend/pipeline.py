@@ -680,6 +680,73 @@ def _annotate_png(data, dao_sources, known, new, out_png):
     plt.close(fig)
 
 
+def detect_tetra3(image_raw, sub, sigma=5.0, min_area=5, max_area=200,
+                  max_axis_ratio=2.0):
+    """Detect sources with tetra3's centroider (local background subtraction +
+    connected-component blobs). Complements DAOStarFinder: it handles uneven
+    backgrounds and rejects single-pixel noise / trails differently.
+
+    Returns a Table with the same schema as detect_sources
+    (xcentroid / ycentroid / peak), or None if tetra3 isn't installed.
+    """
+    try:
+        import tetra3
+    except Exception:
+        print("tetra3 not installed — skipping (pip install "
+              "\"git+https://github.com/esa/tetra3.git\")")
+        return None
+    try:
+        cents = tetra3.get_centroids_from_image(
+            image_raw, sigma=sigma, min_area=min_area, max_area=max_area,
+            max_axis_ratio=max_axis_ratio)
+    except Exception as exc:
+        print("tetra3 detection failed:", exc)
+        return None
+
+    cents = np.atleast_2d(np.asarray(cents, dtype=float))
+    if cents.size == 0:
+        return None
+    ys, xs = cents[:, 0], cents[:, 1]          # tetra3 returns (row=y, col=x)
+
+    h, w = sub.shape
+    peaks = []
+    for x, y in zip(xs, ys):
+        y0, y1 = max(0, int(y) - 3), min(h, int(y) + 4)
+        x0, x1 = max(0, int(x) - 3), min(w, int(x) + 4)
+        box = sub[y0:y1, x0:x1]
+        peaks.append(float(np.nanmax(box)) if box.size else 0.0)
+
+    print(f"  tetra3 detected: {len(xs)}")
+    return Table({"xcentroid": xs, "ycentroid": ys, "peak": np.array(peaks)})
+
+
+def merge_detections(tbl_a, tbl_b, tol_px=3.0):
+    """Union of two source tables, dropping duplicates: any source in tbl_b
+    within tol_px of one already in tbl_a is treated as the same star and
+    skipped. Returns one combined Table."""
+    from astropy.table import vstack
+    if tbl_a is None or len(tbl_a) == 0:
+        return tbl_b
+    if tbl_b is None or len(tbl_b) == 0:
+        return tbl_a
+    axy = np.column_stack([np.asarray(tbl_a["xcentroid"], float),
+                           np.asarray(tbl_a["ycentroid"], float)])
+    bxy = np.column_stack([np.asarray(tbl_b["xcentroid"], float),
+                           np.asarray(tbl_b["ycentroid"], float)])
+    d, _ = cKDTree(axy).query(bxy, k=1)
+    keep = np.asarray(d) > tol_px               # only sources A didn't already have
+    n_dup = int((~keep).sum())
+    if not keep.any():
+        print(f"  merge: +0 new (all {n_dup} overlapped)")
+        return tbl_a
+    add = tbl_b[keep]
+    merged = vstack([tbl_a[["xcentroid", "ycentroid", "peak"]],
+                     add[["xcentroid", "ycentroid", "peak"]]], join_type="exact")
+    print(f"  merge: {len(tbl_a)} + {len(add)} new "
+          f"({n_dup} overlapped) = {len(merged)}")
+    return merged
+
+
 def solve_astrometry_net(dao, fits_path, api_key=None, scale_hint=None,
                          solve_timeout=180, tries=3, wait=10):
     """Blind plate solve via astrometry.net (used when there is NO known centre).
@@ -762,24 +829,38 @@ def run_pipeline(fits_path, out_png,
                  detect_saturated_pass=True, sat_frac=0.6, sat_min_pixels=6,
                  sat_max_axis=2.0, use_gaia=True, use_simbad=True, use_panstarrs=True,
                  use_ned=True, use_skybot=True,
-                 solver="auto", api_key=None, scale_hint=None):
+                 solver="auto", api_key=None, scale_hint=None,
+                 use_dao=True, use_tetra3=False,
+                 tetra_sigma=5.0, tetra_min_area=5, tetra_max_area=200,
+                 tetra_max_axis=2.0, merge_tol_px=3.0):
     """Run the full pipeline on one FITS file. Returns a results dict and
     writes the annotated image to out_png."""
     data, header, wcs = load_fits(fits_path)
     sub, rms = preprocess(data)
 
     fwhm_used = estimate_fwhm(sub, rms, guess_fwhm=fwhm) if auto_fwhm else fwhm
-    dao = detect_sources(sub, rms, fwhm=fwhm_used, n_sigma=threshold_sigma,
-                         sharplo=sharp_lo, sharphi=sharp_hi,
-                         roundlo=round_lo, roundhi=round_hi)
 
-    if detect_saturated_pass:
-        sat = detect_saturated(sub, rms, sat_frac=sat_frac,
-                               min_pixels=sat_min_pixels,
-                               max_axis_ratio=sat_max_axis, existing=dao)
-        if sat is not None and len(sat) > 0:
-            from astropy.table import vstack
-            dao = vstack([dao, sat], join_type="outer") if dao is not None else sat
+    # ── Detection: DAOStarFinder and/or tetra3, merged into ONE list ──────
+    dao = None
+    if use_dao:
+        dao = detect_sources(sub, rms, fwhm=fwhm_used, n_sigma=threshold_sigma,
+                             sharplo=sharp_lo, sharphi=sharp_hi,
+                             roundlo=round_lo, roundhi=round_hi)
+        if detect_saturated_pass:
+            sat = detect_saturated(sub, rms, sat_frac=sat_frac,
+                                   min_pixels=sat_min_pixels,
+                                   max_axis_ratio=sat_max_axis, existing=dao)
+            if sat is not None and len(sat) > 0:
+                dao = merge_detections(dao, sat, tol_px=merge_tol_px)
+
+    if use_tetra3:
+        t3 = detect_tetra3(data, sub, sigma=tetra_sigma,
+                           min_area=tetra_min_area, max_area=tetra_max_area,
+                           max_axis_ratio=tetra_max_axis)
+        dao = merge_detections(dao, t3, tol_px=merge_tol_px) if dao is not None else t3
+
+    n_detected = len(dao) if dao is not None else 0
+    print(f"  Total sources (merged): {n_detected}")
 
     # ── Plate-solving branch ─────────────────────────────────────────────
     #   solver="auto"       : header has centre → Gaia; else → astrometry.net
