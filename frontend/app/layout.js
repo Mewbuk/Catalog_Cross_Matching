@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Catalog Cross-Matching",
+  title: "Catalog Matcher",
   description: "Detect optical sources in a FITS frame, match them to star catalogs, and flag new objects.",
 };
 

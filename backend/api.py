@@ -10,7 +10,7 @@ api.py — FastAPI wrapper around the astronomy pipeline.
 Run:  python -m uvicorn api:app --reload --port 8000
 Demo: set DEMO_MODE=1 first (synthetic results, no FITS / no network).
 """
-import os, io, base64, tempfile, traceback
+import os, io, base64, tempfile, traceback, time, uuid
 import numpy as np
 
 from fastapi import FastAPI, UploadFile, File, Form
@@ -18,6 +18,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import pipeline
+
+# Server data root. On the server this is the mounted /mnt/store/MEW; each run
+# gets its own subfolder here (input FITS + outputs persist). Falls back to a
+# system temp dir when the path isn't available (e.g. local dev), so nothing
+# breaks off the server. Override with the DATA_DIR env var.
+DATA_DIR = os.environ.get("DATA_DIR", "/mnt/store/MEW")
+
+
+def _make_work_dir():
+    """A writable per-run folder under DATA_DIR, or a temp dir as fallback."""
+    try:
+        runs = os.path.join(DATA_DIR, "runs")
+        os.makedirs(runs, exist_ok=True)
+        d = os.path.join(runs, time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6])
+        os.makedirs(d, exist_ok=True)
+        return d
+    except Exception as exc:
+        print(f"DATA_DIR '{DATA_DIR}' not usable ({exc}); using a temp dir.")
+        return tempfile.mkdtemp()
 
 app = FastAPI(title="Astro Pipeline API", version="1.1")
 app.add_middleware(
@@ -29,7 +48,8 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "demo_mode": os.environ.get("DEMO_MODE") == "1"}
+    return {"status": "ok", "demo_mode": os.environ.get("DEMO_MODE") == "1",
+            "data_dir": DATA_DIR, "data_dir_writable": os.access(DATA_DIR, os.W_OK)}
 
 
 def _png_to_b64(path):
@@ -102,9 +122,9 @@ async def analyze(
     if os.environ.get("DEMO_MODE") == "1" or file is None:
         return JSONResponse(_demo_payload())
 
-    tmp = tempfile.mkdtemp()
-    fits_path = os.path.join(tmp, file.filename or "upload.fits")
-    out_png = os.path.join(tmp, "annotated.png")
+    work = _make_work_dir()
+    fits_path = os.path.join(work, file.filename or "upload.fits")
+    out_png = os.path.join(work, "annotated.png")
     with open(fits_path, "wb") as f:
         f.write(await file.read())
 

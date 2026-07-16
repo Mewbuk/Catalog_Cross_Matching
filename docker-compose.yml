@@ -4,7 +4,15 @@ services:
     container_name: astro-web
     ports:
       - "3004:3004"
+    dns:                          # container DNS (reach nova.astrometry.net etc.)
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      # mount the server's data store INTO the container at the same path.
+      # left = host path on the server, right = path inside the container.
+      - /mnt/store/MEW:/mnt/store/MEW
     environment:
       - BACKEND_URL=http://127.0.0.1:8000
-      # - DEMO_MODE=1        # uncomment for synthetic demo (no FITS / no network)
+      - DATA_DIR=/mnt/store/MEW    # backend reads/writes here (uploads + outputs)
+      # - DEMO_MODE=1              # uncomment for synthetic demo (no FITS / no network)
     restart: unless-stopped

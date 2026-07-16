@@ -124,9 +124,9 @@ export default function Home() {
             <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-muted">Input</h2>
             <button onClick={() => inputRef.current?.click()}
                     className="w-full rounded-xl border border-dashed border-line bg-panel2/50 px-4 py-6 text-center transition hover:border-cyan/50">
-              <div className="text-sm text-ink">{file ? file.name : "Choose a file"}</div>
+              <div className="text-sm text-ink">{file ? file.name : "Choose a FITS file"}</div>
               <div className="mt-1 text-xs text-muted">
-                {file ? "Click to replace" : ".fits, .fit, .fts"}
+                {file ? "Click to replace" : ".fits, .fit, .fts \u2014 or run the demo"}
               </div>
             </button>
             <input ref={inputRef} type="file" accept=".fits,.fit,.fts,.fz" hidden
@@ -264,7 +264,7 @@ export default function Home() {
                     FWHM {result.fwhm_used}px &middot; WCS {result.wcs_ok ? "solved" : "none"}
                     {result.solver_used && result.solver_used !== "file" && result.solver_used !== "demo" && (
                       <> &middot; {
-                        result.solver_used === "gaia_offline" ? "M-solve" :
+                        result.solver_used === "gaia_offline" ? "Gaia solve" :
                         result.solver_used === "astrometry_net" ? "astrometry.net solve" :
                         result.solver_used === "failed" ? "solve failed" : result.solver_used
                       }{result.center_source ? ` (center from ${result.center_source})` : ""}</>

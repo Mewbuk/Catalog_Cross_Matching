@@ -748,7 +748,7 @@ def merge_detections(tbl_a, tbl_b, tol_px=3.0):
 
 
 def solve_astrometry_net(dao, fits_path, api_key=None, scale_hint=None,
-                         solve_timeout=180, tries=3, wait=10):
+                         solve_timeout=90, tries=2, wait=5):
     """Blind plate solve via astrometry.net (used when there is NO known centre).
     Needs an API key (free from nova.astrometry.net) and internet. Returns a WCS
     or None. Sends only the detected source list — no image upload.
