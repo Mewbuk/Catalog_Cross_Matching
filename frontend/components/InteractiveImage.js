@@ -8,7 +8,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 // - wheel           -> zoom toward the cursor (page does NOT scroll)
 // - drag            -> pan
 // Markers use the object's pixel coords directly (image top-left origin).
-export default function InteractiveImage({ base64, width, height, objects, selected, onSelect }) {
+export default function InteractiveImage({ base64, width, height, objects, selected, onSelect, reticle }) {
   const wrapRef = useRef(null);
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
   const [hover, setHover] = useState(null);
@@ -113,6 +113,17 @@ export default function InteractiveImage({ base64, width, height, objects, selec
             })}
           </svg>
         </div>
+
+        {/* subtle HUD reticle, fixed to the viewport (not the zoom layer) */}
+        {reticle && (
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+               className="pointer-events-none absolute inset-0 h-full w-full">
+            <line x1="50" y1="0" x2="50" y2="100" stroke="#38BDF8" strokeWidth="0.15" opacity="0.18" />
+            <line x1="0" y1="50" x2="100" y2="50" stroke="#38BDF8" strokeWidth="0.15" opacity="0.18" />
+            <circle cx="50" cy="50" r="12" fill="none" stroke="#38BDF8" strokeWidth="0.15" opacity="0.22" />
+            <path d="M47 50h6M50 47v6" stroke="#38BDF8" strokeWidth="0.25" opacity="0.5" />
+          </svg>
+        )}
 
         {/* hover tooltip (screen-space, follows the marker's data) */}
         {hover && (

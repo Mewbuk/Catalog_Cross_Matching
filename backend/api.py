@@ -93,6 +93,7 @@ def _demo_payload():
         "ok": True, "demo": True,
         "counts": {"detected": n, "known": nk, "new": n - nk},
         "fwhm_used": 3.4, "wcs_ok": True, "solver_used": "demo",
+        "object_name": "DEMO FIELD", "pixel_scale": 1.6356, "fov_arcmin": 27.91,
         "objects": objects,
         "base_image_png": base_png, "img_width": W, "img_height": H,
         "image_png_base64": base_png,   # download uses the same in demo
@@ -150,6 +151,9 @@ async def analyze(
         "fwhm_used": r["fwhm_used"], "wcs_ok": r["wcs_ok"],
         "solver_used": r.get("solver_used"),
         "center_source": r.get("center_source"),
+        "object_name": r.get("object_name"),
+        "pixel_scale": r.get("pixel_scale"),
+        "fov_arcmin": r.get("fov_arcmin"),
         "objects": r["objects"],
         "base_image_png": r["base_image_png"],
         "img_width": r["img_width"], "img_height": r["img_height"],

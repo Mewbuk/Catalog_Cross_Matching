@@ -927,10 +927,30 @@ def run_pipeline(fits_path, out_png,
 
     base_png, img_w, img_h = make_base_png(sub)   # clean image for the overlay
 
+    # Telemetry: object name, pixel scale (arcsec/px), field of view (arcmin)
+    object_name = header.get("OBJECT") if header is not None else None
+    pixel_scale = None
+    fov_arcmin = None
+    try:
+        if wcs is not None:
+            from astropy.wcs.utils import proj_plane_pixel_scales
+            sc = proj_plane_pixel_scales(wcs) * 3600.0          # arcsec/px per axis
+            pixel_scale = float(np.mean(sc))
+        elif header is not None and header.get("XPIXSZ") and header.get("FOCALLEN"):
+            binning = float(header.get("XBINNING", 1) or 1)
+            pixel_scale = 206.265 * float(header["XPIXSZ"]) * binning / float(header["FOCALLEN"])
+        if pixel_scale:
+            fov_arcmin = pixel_scale * max(img_w, img_h) / 60.0
+    except Exception as exc:
+        print("telemetry scale/FOV calc skipped:", exc)
+
     return {"n_sources": (len(dao) if dao is not None else 0),
             "n_known": len(known), "n_new": len(new),
             "fwhm_used": round(float(fwhm_used), 2),
             "wcs_ok": wcs is not None, "solver_used": solver_used,
             "center_source": center_source,
+            "object_name": object_name,
+            "pixel_scale": (round(pixel_scale, 4) if pixel_scale else None),
+            "fov_arcmin": (round(fov_arcmin, 2) if fov_arcmin else None),
             "objects": objects,
             "base_image_png": base_png, "img_width": img_w, "img_height": img_h}
