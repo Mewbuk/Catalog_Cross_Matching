@@ -7,11 +7,19 @@ import { useEffect, useRef } from "react";
 // matching row into view and highlights it.
 export default function ResultsTable({ objects, selected, onSelect }) {
   const rowRefs = useRef({});
+  const scrollRef = useRef(null);
 
+  // Keep the selected row visible, but scroll ONLY inside this container —
+  // scrollIntoView() would scroll the whole page, which is jarring when the
+  // selection came from clicking a marker on the image.
   useEffect(() => {
-    if (selected != null && rowRefs.current[selected]) {
-      rowRefs.current[selected].scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
+    const box = scrollRef.current;
+    const row = selected != null ? rowRefs.current[selected] : null;
+    if (!box || !row) return;
+    const b = box.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    const delta = (r.top - b.top) - (box.clientHeight / 2 - r.height / 2);
+    box.scrollTo({ top: box.scrollTop + delta, behavior: "smooth" });
   }, [selected]);
 
   if (!objects?.length) return null;
@@ -23,7 +31,7 @@ export default function ResultsTable({ objects, selected, onSelect }) {
 
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-panel">
-      <div className="max-h-[460px] overflow-auto">
+      <div ref={scrollRef} className="max-h-[460px] overflow-auto">
         <table className="w-full border-collapse text-left text-sm">
           <thead className="sticky top-0 bg-panel2 text-muted">
             <tr className="border-b border-line">

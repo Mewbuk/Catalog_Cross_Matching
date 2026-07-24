@@ -52,6 +52,8 @@ GAIA_CFG = dict(
     gaia_maglimit      = 14.0,   # faintest Gaia G to fetch for the solve
     gaia_radius_factor = 0.9,    # cone radius = factor × FOV (deg)
     n_match_gaia       = 200,    # Gaia stars considered when matching
+    n_det_match        = 60,     # brightest DETECTED stars used for the pattern lock
+                                 # (cost is quadratic in this; keep <= n_match_gaia)
     len_tol_px         = 2.0,    # absolute pair-length tolerance (px)
     len_rel_tol        = 0.03,   # relative pair-length tolerance (~3% scale)
     rot_bin_deg        = 0.5,    # rotation-vote bin size
@@ -237,7 +239,7 @@ def detect_saturated(sub, rms, sat_frac=0.6, sat_sigma=20.0, sat_level=None,
     return Table(rows=rows, names=("xcentroid", "ycentroid", "peak"))
 
 
-def plate_solve(stars, fits_path, n_bright=5, cfg=None, pixel_scale=None,
+def plate_solve(stars, fits_path, cfg=None, pixel_scale=None,
                 verbose=True, center_override=None):
     """Offline plate solve: match detected star centroids to Gaia DR3 (no astrometry.net).
 
@@ -247,7 +249,6 @@ def plate_solve(stars, fits_path, n_bright=5, cfg=None, pixel_scale=None,
 
     stars       : (N,3) array [X, Y, FLUX]  (0-indexed pixel coords, brightest first or any order)
     fits_path   : path to the FITS, read for the header centre + pixel scale
-    n_bright    : number of brightest Gaia-matched stars used to fit the final WCS
     cfg         : matching-config dict (defaults to GAIA_CFG)
     pixel_scale : arcsec/px override; if None, derived from XPIXSZ (um) & FOCALLEN (mm),
                   else from a PIXSCALE/SECPIX/SCALE header key if present
@@ -336,7 +337,7 @@ def plate_solve(stars, fits_path, n_bright=5, cfg=None, pixel_scale=None,
 
     # === 3. lock flip + rotation + shift from the brightest detected stars ===
     order = np.argsort(flux)[::-1]
-    det = all_det[order[:60]]
+    det = all_det[order[:cfg.get("n_det_match", 60)]]
     dL, dA = pair_vecs(det); best = None
     abin = np.deg2rad(cfg["rot_bin_deg"]); ltol = cfg["len_tol_px"]; tol = cfg["coarse_tol_px"]
     rel = cfg.get("len_rel_tol", 0.03)
@@ -400,11 +401,14 @@ def plate_solve(stars, fits_path, n_bright=5, cfg=None, pixel_scale=None,
         print("    plate solve: refinement lost the matches"); return None, m
     gaia_of = dict(zip(idx.tolist(), match.tolist()))
 
-    # === 6. final WCS from the N brightest cleanly-matched stars ===
-    sel = idx[np.argsort(flux[idx])[::-1]][:n_bright]
-    pts = all_det[sel]; matched = gsub[[gaia_of[k] for k in sel]]
+    # === 6. final WCS from ALL cleanly-matched stars ===
+    # Using every refined match (rather than only the few brightest) gives the
+    # fit wider spatial coverage across the frame and averages out individual
+    # centroid noise, so the WCS stays accurate out to the corners.
+    # (Order is irrelevant here — the least-squares fit is order-independent.)
+    pts = all_det[idx]; matched = gsub[[gaia_of[k] for k in idx]]
     if len(pts) < 3:
-        print("    plate solve: fewer than 3 matched bright stars"); return None, m
+        print("    plate solve: fewer than 3 matched stars"); return None, m
     w = fit_wcs_from_points((pts[:, 0], pts[:, 1]), matched, proj_point=center)
 
     # === 7. validate + geometry sanity check (NOT part of the fit) ===
@@ -421,7 +425,7 @@ def plate_solve(stars, fits_path, n_bright=5, cfg=None, pixel_scale=None,
     spread = np.hypot(pts[:, 0].std(), pts[:, 1].std()) / max(nx, ny)
     if verbose:
         print(f"  ✔  plate solve: matched {nmatched} stars to Gaia (flip={flip}, "
-              f"rot={np.rad2deg(ang):.2f}°); WCS fit from {len(pts)} brightest")
+              f"rot={np.rad2deg(ang):.2f}°); WCS fit from all {len(pts)} matches")
         print(f"     validation: {nval}/{len(all_det)} stars land on Gaia (<2 px) | "
               f"hull {frac*100:.1f}% of frame, spread {spread:.2f}")
         if frac < 0.02 or spread < 0.12:

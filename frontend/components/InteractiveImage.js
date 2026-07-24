@@ -47,6 +47,29 @@ export default function InteractiveImage({ base64, width, height, objects, selec
   const onUp = () => { dragging.current = null; };
   const reset = () => setView({ scale: 1, tx: 0, ty: 0 });
 
+  // Centre a source in the viewport and zoom in on it.
+  // Screen position of an image pixel is  tx + scale * (px * s), where
+  // s converts image pixels -> displayed pixels at scale 1. Solving for the
+  // translation that puts the source at the viewport centre gives the below.
+  const SELECT_ZOOM = 2.0;
+  const focusOn = useCallback((o) => {
+    const el = wrapRef.current;
+    if (!el || !o) return;
+    const s = el.clientWidth / width;
+    const scale = SELECT_ZOOM;
+    setView({
+      scale,
+      tx: el.clientWidth / 2 - scale * o.x * s,
+      ty: el.clientHeight / 2 - scale * o.y * s,
+    });
+  }, [width]);
+
+  // Selecting a source (from a marker click OR a table row) centres it here.
+  useEffect(() => {
+    if (selected == null) return;
+    focusOn(objects?.[selected]);
+  }, [selected, objects, focusOn]);
+
   // Only treat it as a marker click if the pointer didn't pan.
   const clickMarker = (i, sel) => {
     if (dragging.current?.moved) return;
